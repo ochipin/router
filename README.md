@@ -1,5 +1,6 @@
 ルーティングテーブル管理ライブラリ
 ===
+ルーティングテーブルを生成するライブラリ。
 
 ```go
 package main
@@ -73,7 +74,8 @@ func main() {
 	fmt.Println(out[0].String())
 
 	// Call で呼び出す前に、事前チェックをする
-	fn, err := res.Valid(args)
+	// 第2引数以降は、復帰値の型を文字列で指定可能
+	fn, err := res.Valid(args, "string")
 	if err != nil {
 		panic(err)
 	}
@@ -82,6 +84,33 @@ func main() {
 	fmt.Println(out[0].String())
 }
 ```
+
+Valid 関数の復帰値の error は次の構造体により構成されている。
+
+```go
+switch types := err.(type) {
+// コールするメソッドの引数の数が不正
+case *router.NotEnoughArgs:
+	...
+// コールするメソッドの引数の型が不正
+case *router.IllegalArgs:
+	...
+// コールするメソッドの復帰値の数が不正
+case *router.NotEnoughRets:
+	...
+// コールするメソッドの復帰値の型が不正
+case *router.IllegalRets:
+	...
+}
+```
+各エラー型の構造体は、下記メンバ変数を所持している。
+
+* Message  
+エラーメッセージ本文
+* Have  
+関数の引数、復帰値に指定した型情報
+* Want  
+関数の引数、復帰値に指定しなければならない型情報
 
 ```go
 /*

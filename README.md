@@ -71,6 +71,15 @@ func main() {
 	}
 	// Hello World! が表示される
 	fmt.Println(out[0].String())
+
+	// Call で呼び出す前に、事前チェックをする
+	fn, err := res.Valid(args)
+	if err != nil {
+		panic(err)
+	}
+	out = fn.Call(args)
+	// Hello World! が表示される
+	fmt.Println(out[0].String())
 }
 ```
 

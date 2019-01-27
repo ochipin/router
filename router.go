@@ -360,8 +360,9 @@ type Generator interface {
 // Result : Action() が返却するResult型
 type Result interface {
 	Get() (*reflect.Value, error)
-	Call([]reflect.Value) ([]reflect.Value, error)
+	Call([]reflect.Value, ...string) ([]reflect.Value, error)
 	Name() (string, string)
+	Valid([]reflect.Value, ...string) (reflect.Value, error)
 }
 
 // Action : アクション登録用構造体
@@ -393,26 +394,181 @@ func (action *Action) Get() (*reflect.Value, error) {
 	return &caller, nil
 }
 
-// Call : 関数をコールする
-func (action *Action) Call(args []reflect.Value) ([]reflect.Value, error) {
+// Valid : 与えられた引数の数、型、復帰値の数、型がコールするメソッドと一致している場合、メソッド情報を返却する
+func (action *Action) Valid(args []reflect.Value, ret ...string) (reflect.Value, error) {
 	// メソッド情報を取得
 	caller, err := action.Get()
 	if err != nil {
-		return nil, err
+		return reflect.Value{}, err
 	}
 	fn := caller.MethodByName(action.Actname)
 
-	// 型情報を取得し、引数があるかチェックする
 	typ := reflect.TypeOf(fn.Interface())
+	// 型情報を取得し、引数の数が一致するかチェックする
 	if len(args) != typ.NumIn() {
-		return nil, fmt.Errorf("'%s.%s' - argument error", action.Ctlname, action.Actname)
+		var have []string
+		// 呼び出し元の引数情報を取得
+		for i := 0; i < len(args); i++ {
+			have = append(have, args[i].Type().String())
+		}
+		var want []string
+		// 呼び出し先の引数情報を取得
+		for i := 0; i < typ.NumIn(); i++ {
+			want = append(want, typ.In(i).String())
+		}
+		// エラーを返却する
+		return reflect.Value{}, &NotEnoughArgs{
+			Message: fmt.Sprintf("not enough arguments in call to '%s.%s'. have = %d, want = %d",
+				action.Ctlname, action.Actname, len(args), typ.NumIn()),
+			Have: fmt.Sprintf("(%s)", strings.Join(have, ", ")),
+			Want: fmt.Sprintf("(%s)", strings.Join(want, ", ")),
+		}
 	}
 
-	// 関数をコール
+	// 引数の型情報が正しいかチェックする
+	for i := 0; i < typ.NumIn(); i++ {
+		// 型情報が一致している場合、次の型情報へ
+		if typ.In(i) == args[i].Type() {
+			continue
+		}
+
+		var errflag = true
+		if typ.In(i).Kind() == reflect.Interface {
+			// コールする関数の引数の型情報がinterfaceの場合
+			func() {
+				defer func() {
+					if err := recover(); err != nil {
+						errflag = true
+					}
+				}()
+				errflag = false
+				reflect.New(typ.In(i)).Elem().Set(args[i])
+			}()
+		} else if typ.In(i).Kind() == args[i].Type().Kind() {
+			// コールする関数の引数のKindは同じ場合
+			func() {
+				defer func() {
+					if err := recover(); err != nil {
+						errflag = true
+					}
+				}()
+				errflag = false
+				v := args[i].Convert(typ.In(i))
+				args[i] = v
+			}()
+		}
+		if errflag == false {
+			continue
+		}
+		var have, want []string
+		for i := 0; i < len(args); i++ {
+			have = append(have, args[i].Type().String())
+			want = append(want, typ.In(i).String())
+		}
+		return reflect.Value{}, &IllegalArgs{
+			Message: fmt.Sprintf("cannot use (type %s) as type %s in argument to '%s.%s'",
+				args[i].Type().Name(), typ.In(i).Name(), action.Ctlname, action.Actname),
+			Have: fmt.Sprintf("(%s)", strings.Join(have, ", ")),
+			Want: fmt.Sprintf("(%s)", strings.Join(want, ", ")),
+		}
+	}
+
+	// ret が無指定の場合、復帰値の検証は行わない
+	if len(ret) == 0 {
+		return fn, nil
+	}
+
+	// ret が指定されている場合、復帰値の数を検証する
+	if typ.NumOut() != len(ret) {
+		var have []string
+		// 呼び出し先の引数情報を取得
+		for i := 0; i < typ.NumIn(); i++ {
+			have = append(have, typ.In(i).String())
+		}
+		return reflect.Value{}, &NotEnoughRets{
+			Message: fmt.Sprintf("not enough arguments to return '%s.%s'. have = %d, want = %d",
+				action.Ctlname, action.Actname, len(ret), typ.NumOut()),
+			Have: fmt.Sprintf("(%s)", strings.Join(have, ", ")),
+			Want: fmt.Sprintf("(%s)", strings.Join(ret, ", ")),
+		}
+	}
+
+	// 復帰値の型を検証する
+	for i := 0; i < typ.NumOut(); i++ {
+		// 型情報が一致している場合、次の型情報へ
+		if typ.Out(i).String() == ret[i] {
+			continue
+		}
+		var have []string
+		// 呼び出し先の引数情報を取得
+		for i := 0; i < typ.NumIn(); i++ {
+			have = append(have, typ.In(i).String())
+		}
+		return reflect.Value{}, &IllegalRets{
+			Message: fmt.Sprintf("cannot use (type %s) as type %s in return argument '%s.%s'",
+				typ.Out(i).String(), ret[i], action.Ctlname, action.Actname),
+			Have: fmt.Sprintf("(%s)", strings.Join(have, ", ")),
+			Want: fmt.Sprintf("(%s)", strings.Join(ret, ", ")),
+		}
+	}
+
+	return fn, nil
+}
+
+// Call : 関数をコールする
+func (action *Action) Call(args []reflect.Value, ret ...string) ([]reflect.Value, error) {
+	fn, err := action.Valid(args, ret...)
+	if err != nil {
+		return nil, err
+	}
 	return fn.Call(args), nil
 }
 
 // Name : コントローラ名とアクション名を返却する
 func (action *Action) Name() (string, string) {
 	return action.Ctlname, action.Actname
+}
+
+// NotEnoughArgs : コールするメソッドの引数の数が一致しない場合のエラー型
+type NotEnoughArgs struct {
+	Message string
+	Have    string
+	Want    string
+}
+
+func (err *NotEnoughArgs) Error() string {
+	return err.Message
+}
+
+// IllegalArgs : コールするメソッドの引数の型が一致しない場合のエラー型
+type IllegalArgs struct {
+	Message string
+	Have    string
+	Want    string
+}
+
+func (err *IllegalArgs) Error() string {
+	return err.Message
+}
+
+// NotEnoughRets : コールするメソッドの復帰値の数が一致しない場合のエラー型
+type NotEnoughRets struct {
+	Message string
+	Have    string
+	Want    string
+}
+
+func (err *NotEnoughRets) Error() string {
+	return err.Message
+}
+
+// IllegalRets : コールするメソッドの復帰値の型が一致しない場合のエラー型
+type IllegalRets struct {
+	Message string
+	Have    string
+	Want    string
+}
+
+func (err *IllegalRets) Error() string {
+	return err.Message
 }

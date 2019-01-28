@@ -359,7 +359,7 @@ type Generator interface {
 
 // Result : Action() が返却するResult型
 type Result interface {
-	Get() (*reflect.Value, error)
+	Get() (reflect.Value, error)
 	Call([]reflect.Value, ...string) ([]reflect.Value, error)
 	Name() (string, string)
 	Valid([]reflect.Value, ...string) (reflect.Value, error)
@@ -373,25 +373,25 @@ type Action struct {
 }
 
 // Get : アクションを実行するCallerを取得する
-func (action *Action) Get() (*reflect.Value, error) {
+func (action *Action) Get() (reflect.Value, error) {
 	// 登録済みのコントローラの型が存在するかチェックする
 	typ := reflect.TypeOf(action.Controller)
 	if typ == nil {
-		return nil, fmt.Errorf("'%s.%s' - is nil", action.Ctlname, action.Actname)
+		return reflect.Value{}, fmt.Errorf("'%s.%s' - is nil", action.Ctlname, action.Actname)
 	}
 
 	// 登録済みのコントローラの型が構造体型かチェックする
 	if typ.Kind() != reflect.Struct {
-		return nil, fmt.Errorf("'%s.%s' - not struct type", action.Ctlname, action.Actname)
+		return reflect.Value{}, fmt.Errorf("'%s.%s' - not struct type", action.Ctlname, action.Actname)
 	}
 
 	caller := reflect.New(typ)
 	// コールする関数情報が不正ではないかチェックする
 	if caller.MethodByName(action.Actname).IsValid() == false {
-		return nil, fmt.Errorf("'%s.%s' - function undefined", action.Ctlname, action.Actname)
+		return reflect.Value{}, fmt.Errorf("'%s.%s' - function undefined", action.Ctlname, action.Actname)
 	}
 
-	return &caller, nil
+	return caller, nil
 }
 
 // Valid : 与えられた引数の数、型、復帰値の数、型がコールするメソッドと一致している場合、メソッド情報を返却する
@@ -529,6 +529,108 @@ func (action *Action) Name() (string, string) {
 	return action.Ctlname, action.Actname
 }
 
+// SetStruct : 指定された reflect.Value が所持する構造体に i を格納する
+func SetStruct(action reflect.Value, i interface{}) error {
+	// action が有効か否かを判定する
+	if action.IsValid() == false {
+		return &InvalidError{
+			Message: fmt.Sprintf("detects incorrect argument value. action = invalid"),
+		}
+	}
+	// ポインタの場合は、中身を指す
+	for action.Kind() == reflect.Ptr {
+		action = action.Elem()
+	}
+	// action が有効か否かを判定する
+	if action.IsValid() == false {
+		return &InvalidError{
+			Message: fmt.Sprintf("detects incorrect argument value. action = invalid"),
+		}
+	}
+	// 構造体ではない場合、エラーを返却する
+	if action.Kind() != reflect.Struct {
+		kind := action.Kind().String()
+		name := action.Type().String()
+		return &NoStruct{
+			Message: fmt.Sprintf("argument is not struct type. action is type = %s, kind = %s", kind, name),
+			Kind:    kind,
+			Type:    name,
+		}
+	}
+
+	// 与えられた引数 i をreflect.Value型に変更する
+	v := reflect.ValueOf(i)
+	// 有効か否かを判定する
+	if v.IsValid() == false {
+		return &InvalidError{
+			Message: fmt.Sprintf("detects incorrect argument value. i = invalid"),
+		}
+	}
+	// i から基本型名を取得する (ex: router.Structname)
+	basicname := v.Type().String()
+	// i がポインタで渡された場合は、中身を指す
+	for v.Kind() == reflect.Ptr {
+		v = v.Elem()
+	}
+	if v.IsValid() == false {
+		return &InvalidError{
+			Message: fmt.Sprintf("detects incorrect argument value. i = invalid"),
+		}
+	}
+	// i が構造体ではない場合、エラーを返却する
+	if v.Kind() != reflect.Struct {
+		kind := v.Kind().String()
+		name := v.Type().String()
+		return &NoStruct{
+			Message: fmt.Sprintf("argument is not struct type. i is type = %s, kind = %s", kind, name),
+			Kind:    kind,
+			Type:    name,
+		}
+	}
+	// i のメンバ名(ミックスイン名)を取得 (ex: Structname)
+	membername := v.Type().Name()
+
+	// 引数で指定した構造体がミックスインされているか確認する
+	for {
+		action = action.FieldByName(membername)
+		// 指定された型情報がミックスインされていない場合、エラーを返却する
+		if action.IsValid() == false {
+			return &NoMixin{
+				Message:    fmt.Sprintf("have not mix-in \"%s\"", basicname),
+				Basicname:  basicname,
+				Membername: membername,
+			}
+		}
+		// 型情報が一致した場合、ループを抜ける
+		if action.Type().String() == basicname {
+			break
+		}
+		// 型が一致せず、actionがポインタの場合中身を指すようにする
+		for action.Kind() == reflect.Ptr {
+			action = action.Elem()
+		}
+		// Invalid の場合は、エラーを返却する
+		if action.IsValid() == false {
+			return &NoMixin{
+				Message:    fmt.Sprintf("have not mix-in \"%s\"", basicname),
+				Basicname:  basicname,
+				Membername: membername,
+			}
+		}
+		// Kindがstructではない場合、エラーを返却する
+		if action.Kind() != reflect.Struct {
+			return &NoMixin{
+				Message:    fmt.Sprintf("have not mix-in \"%s\"", basicname),
+				Basicname:  basicname,
+				Membername: membername,
+			}
+		}
+	}
+
+	action.Set(reflect.ValueOf(i))
+	return nil
+}
+
 // NotEnoughArgs : コールするメソッドの引数の数が一致しない場合のエラー型
 type NotEnoughArgs struct {
 	Message string
@@ -570,5 +672,36 @@ type IllegalRets struct {
 }
 
 func (err *IllegalRets) Error() string {
+	return err.Message
+}
+
+// InvalidError : SetStructに渡した引数が不正な場合のエラー型
+type InvalidError struct {
+	Message string
+}
+
+func (err *InvalidError) Error() string {
+	return err.Message
+}
+
+// NoStruct : SetStructに渡した引数が構造体型ではない場合のエラー型
+type NoStruct struct {
+	Message string
+	Kind    string
+	Type    string
+}
+
+func (err *NoStruct) Error() string {
+	return err.Message
+}
+
+// NoMixin : 指定した構造体がミックスインされていない場合のエラー型
+type NoMixin struct {
+	Message    string
+	Membername string
+	Basicname  string
+}
+
+func (err *NoMixin) Error() string {
 	return err.Message
 }

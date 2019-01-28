@@ -147,3 +147,47 @@ func main() {
 	r.Generator = &MyGenerator{}
 	...
 ```
+
+`SetStruct`関数を用いることで、登録されている構造体に値をセット可能。
+ただし、Mix-inしているオブジェクトに限る。
+
+```go
+type Base struct {
+	...
+}
+type Sample struct {
+	Base
+}
+
+...
+
+res, args, err = data.Caller("GET", "/World!")
+if err != nil {
+	panic(err)
+}
+
+act, _ := res.Get()
+// act(Sample)が所持するBaseに値を設定する
+err := router.SetStruct(act, &Base{
+	// 値を設定
+})
+if err != nil {
+	panic(err)
+}
+```
+
+SetStruct が返却するエラー型は次のとおり。
+
+```go
+switch types := err.(type) {
+// 指定された引数に nil が渡されたなどした場合
+case *router.InvalidError:
+	...
+// 指定された引数が構造体型ではない場合
+case *router.NoStruct:
+	...
+// 値をセットしようとしたが、ミックスインされていない
+case *router.NoMixin:
+	...
+}
+```

@@ -6,7 +6,15 @@ import (
 	"testing"
 )
 
-type Sample struct{ Method string }
+type MixinStruct struct{ Ok bool }
+type Sample struct {
+	*MixinStruct
+	Method     string
+	Basename   *int
+	SampleData int
+}
+type Basename struct{ Ok bool }
+type SampleData struct{ Ok bool }
 
 func (s *Sample) Index()                   { fmt.Println("Index page") }
 func (s *Sample) Hello(a, b string) string { return fmt.Sprintf("Hello %s %s", a, b) }
@@ -26,6 +34,75 @@ type ResultType interface {
 	Ok()
 }
 
+func Test__ROUTER_SET(t *testing.T) {
+	var data = New()
+
+	if err := data.Register("PUT", "/:n/:n", "Sample.Hello"); err != nil {
+		t.Fatal(err)
+	}
+	// Sample 構造体をコントローラとして登録する
+	if err := data.SetClass([]interface{}{Sample{}}); err != nil {
+		t.Fatal("data.SetController is error")
+	}
+	// 正規表現オブジェクトを登録
+	data.SetRegexp(map[string]string{
+		"id": "[0-9]+",
+	})
+	data.AddRegexp("n", "([0-9]+)")
+	// 登録した情報から、ルーティングテーブルを生成する
+	router, err := data.Create()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// ルーティングテーブルから、Callerを取得する
+	caller, _, err := router.Caller("PUT", "/1/2")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	action, _ := caller.Get()
+	if err := SetStruct(action, &MixinStruct{true}); err != nil {
+		t.Fatal(err)
+	}
+	if err := SetStruct(reflect.ValueOf(nil), &MixinStruct{true}); err == nil {
+		t.Fatal("SetStruct")
+	}
+	if err := SetStruct(reflect.ValueOf(100), &MixinStruct{true}); err == nil {
+		t.Fatal("SetStruct")
+	}
+	if err := SetStruct(action, nil); err == nil {
+		t.Fatal(err)
+	} else {
+		fmt.Println(err)
+	}
+	if err := SetStruct(action, 100); err == nil {
+		t.Fatal(err)
+	} else {
+		fmt.Println(err)
+	}
+	if err := SetStruct(action, &Sample{}); err == nil {
+		t.Fatal(err)
+	} else {
+		fmt.Println(err)
+	}
+	if err := SetStruct(action, MixinStruct{}); err == nil {
+		t.Fatal(err)
+	}
+	if err := SetStruct(action, Basename{}); err == nil {
+		t.Fatal(err)
+	}
+	if err := SetStruct(action, SampleData{}); err == nil {
+		t.Fatal(err)
+	}
+	var s *Sample
+	if err := SetStruct(reflect.ValueOf(s), Basename{}); err == nil {
+		t.Fatal(err)
+	}
+	if err := SetStruct(action, s); err == nil {
+		t.Fatal(err)
+	}
+}
 func Test__ROUTER_CHECKCALL1(t *testing.T) {
 	// ルーティングテーブル作成用オブジェクトを生成
 	var data = New()

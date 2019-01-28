@@ -362,7 +362,8 @@ type Result interface {
 	Get() (reflect.Value, error)
 	Call([]reflect.Value, ...string) ([]reflect.Value, error)
 	Name() (string, string)
-	Valid([]reflect.Value, ...string) (reflect.Value, error)
+	Valid(reflect.Value, []reflect.Value, ...string) (reflect.Value, error)
+	Callname(reflect.Value, string, []reflect.Value, ...string) ([]reflect.Value, error)
 }
 
 // Action : アクション登録用構造体
@@ -395,14 +396,18 @@ func (action *Action) Get() (reflect.Value, error) {
 }
 
 // Valid : 与えられた引数の数、型、復帰値の数、型がコールするメソッドと一致している場合、メソッド情報を返却する
-func (action *Action) Valid(args []reflect.Value, ret ...string) (reflect.Value, error) {
+func (action *Action) Valid(caller reflect.Value, args []reflect.Value, ret ...string) (reflect.Value, error) {
 	// メソッド情報を取得
-	caller, err := action.Get()
-	if err != nil {
-		return reflect.Value{}, err
-	}
 	fn := caller.MethodByName(action.Actname)
+	return action.valid(fn, action.Actname, args, ret...)
+}
 
+func (action *Action) valid(fn reflect.Value, actname string, args []reflect.Value, ret ...string) (reflect.Value, error) {
+	if fn.IsValid() == false {
+		return reflect.Value{}, &InvalidError{
+			Message: fmt.Sprintf("'%s.%s' function does not exists", action.Ctlname, actname),
+		}
+	}
 	typ := reflect.TypeOf(fn.Interface())
 	// 型情報を取得し、引数の数が一致するかチェックする
 	if len(args) != typ.NumIn() {
@@ -419,7 +424,7 @@ func (action *Action) Valid(args []reflect.Value, ret ...string) (reflect.Value,
 		// エラーを返却する
 		return reflect.Value{}, &NotEnoughArgs{
 			Message: fmt.Sprintf("not enough arguments in call to '%s.%s'. have = %d, want = %d",
-				action.Ctlname, action.Actname, len(args), typ.NumIn()),
+				action.Ctlname, actname, len(args), typ.NumIn()),
 			Have: fmt.Sprintf("(%s)", strings.Join(have, ", ")),
 			Want: fmt.Sprintf("(%s)", strings.Join(want, ", ")),
 		}
@@ -467,7 +472,7 @@ func (action *Action) Valid(args []reflect.Value, ret ...string) (reflect.Value,
 		}
 		return reflect.Value{}, &IllegalArgs{
 			Message: fmt.Sprintf("cannot use (type %s) as type %s in argument to '%s.%s'",
-				args[i].Type().Name(), typ.In(i).Name(), action.Ctlname, action.Actname),
+				args[i].Type().Name(), typ.In(i).Name(), action.Ctlname, actname),
 			Have: fmt.Sprintf("(%s)", strings.Join(have, ", ")),
 			Want: fmt.Sprintf("(%s)", strings.Join(want, ", ")),
 		}
@@ -487,7 +492,7 @@ func (action *Action) Valid(args []reflect.Value, ret ...string) (reflect.Value,
 		}
 		return reflect.Value{}, &NotEnoughRets{
 			Message: fmt.Sprintf("not enough arguments to return '%s.%s'. have = %d, want = %d",
-				action.Ctlname, action.Actname, len(ret), typ.NumOut()),
+				action.Ctlname, actname, len(ret), typ.NumOut()),
 			Have: fmt.Sprintf("(%s)", strings.Join(have, ", ")),
 			Want: fmt.Sprintf("(%s)", strings.Join(ret, ", ")),
 		}
@@ -506,7 +511,7 @@ func (action *Action) Valid(args []reflect.Value, ret ...string) (reflect.Value,
 		}
 		return reflect.Value{}, &IllegalRets{
 			Message: fmt.Sprintf("cannot use (type %s) as type %s in return argument '%s.%s'",
-				typ.Out(i).String(), ret[i], action.Ctlname, action.Actname),
+				typ.Out(i).String(), ret[i], action.Ctlname, actname),
 			Have: fmt.Sprintf("(%s)", strings.Join(have, ", ")),
 			Want: fmt.Sprintf("(%s)", strings.Join(ret, ", ")),
 		}
@@ -515,9 +520,25 @@ func (action *Action) Valid(args []reflect.Value, ret ...string) (reflect.Value,
 	return fn, nil
 }
 
+// Callname : 指定した名前で、メソッドを実行する
+func (action *Action) Callname(elem reflect.Value, methodname string, args []reflect.Value, ret ...string) ([]reflect.Value, error) {
+	method := elem.MethodByName(methodname)
+	fn, err := action.valid(method, methodname, args, ret...)
+	if err != nil {
+		return nil, err
+	}
+	return fn.Call(args), nil
+}
+
 // Call : 関数をコールする
 func (action *Action) Call(args []reflect.Value, ret ...string) ([]reflect.Value, error) {
-	fn, err := action.Valid(args, ret...)
+	// アクション情報を取得
+	caller, err := action.Get()
+	if err != nil {
+		return nil, err
+	}
+
+	fn, err := action.Valid(caller, args, ret...)
 	if err != nil {
 		return nil, err
 	}

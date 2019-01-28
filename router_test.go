@@ -34,6 +34,58 @@ type ResultType interface {
 	Ok()
 }
 
+func Test__ROUTER_CALLNAME(t *testing.T) {
+	var data = New()
+
+	if err := data.Register("PUT", "/:n/:n", "Sample.Hello"); err != nil {
+		t.Fatal(err)
+	}
+	// Sample 構造体をコントローラとして登録する
+	if err := data.SetClass([]interface{}{Sample{}}); err != nil {
+		t.Fatal("data.SetController is error")
+	}
+	// 正規表現オブジェクトを登録
+	data.SetRegexp(map[string]string{
+		"id": "[0-9]+",
+	})
+	data.AddRegexp("n", "([0-9]+)")
+	// 登録した情報から、ルーティングテーブルを生成する
+	router, err := data.Create()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// ルーティングテーブルから、Callerを取得する
+	caller, _, err := router.Caller("PUT", "/1/2")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	action, _ := caller.Get()
+
+	_, err = caller.Callname(action, "Hello", []reflect.Value{
+		reflect.ValueOf(1),
+		reflect.ValueOf(2),
+	}, "string")
+	if err == nil {
+		t.Fatal("Callname")
+	}
+	_, err = caller.Callname(action, "Hello", []reflect.Value{
+		reflect.ValueOf("1"),
+		reflect.ValueOf("2"),
+	}, "string")
+	if err != nil {
+		t.Fatal("Callname")
+	}
+	_, err = caller.Callname(action, "Undefined", []reflect.Value{
+		reflect.ValueOf("1"),
+		reflect.ValueOf("2"),
+	}, "string")
+	if err == nil {
+		t.Fatal("Callname")
+	}
+}
+
 func Test__ROUTER_SET(t *testing.T) {
 	var data = New()
 
@@ -136,12 +188,13 @@ func Test__ROUTER_CHECKCALL1(t *testing.T) {
 		t.Fatal("Caller.Name is error")
 	}
 
+	c, _ := caller.Get()
 	// 関数情報を取得する
-	if _, err = caller.Valid(args); err != nil {
+	if _, err = caller.Valid(c, args); err != nil {
 		t.Fatal(err)
 	}
 	// 引数の数が違う場合のエラー
-	if _, err = caller.Valid([]reflect.Value{reflect.ValueOf(200)}); err == nil {
+	if _, err = caller.Valid(c, []reflect.Value{reflect.ValueOf(200)}); err == nil {
 		t.Fatal(err)
 	} else {
 		i := err.(*NotEnoughArgs)
@@ -150,7 +203,7 @@ func Test__ROUTER_CHECKCALL1(t *testing.T) {
 		fmt.Println(err)
 	}
 	// 引数の型が違う場合のエラー
-	if _, err = caller.Valid([]reflect.Value{reflect.ValueOf(200), reflect.ValueOf(100)}); err == nil {
+	if _, err = caller.Valid(c, []reflect.Value{reflect.ValueOf(200), reflect.ValueOf(100)}); err == nil {
 		t.Fatal(err)
 	} else {
 		i := err.(*IllegalArgs)
@@ -195,17 +248,18 @@ func Test__ROUTER_CHECKCALL2(t *testing.T) {
 		t.Fatal("Caller.Name is error")
 	}
 
+	c, _ := caller.Get()
 	// 関数情報を取得する
 	var argtype ResultType
 	argtype = String("name")
 	argtype.Ok()
 	(argtype.(String)).Ok()
-	if _, err = caller.Valid([]reflect.Value{
+	if _, err = caller.Valid(c, []reflect.Value{
 		reflect.ValueOf(argtype),
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = caller.Valid([]reflect.Value{
+	if _, err = caller.Valid(c, []reflect.Value{
 		reflect.ValueOf(100),
 	}); err == nil {
 		t.Fatal(err)
@@ -226,13 +280,13 @@ func Test__ROUTER_CHECKCALL2(t *testing.T) {
 
 	// 関数情報を取得する
 	var a = []reflect.Value{reflect.ValueOf("string")}
-	if f, err := caller.Valid(a); err != nil {
+	if f, err := caller.Valid(c, a); err != nil {
 		t.Fatal(err)
 	} else {
 		f.Call(a)
 	}
 	// 関数情報を取得する
-	if _, err = caller.Valid([]reflect.Value{
+	if _, err = caller.Valid(c, []reflect.Value{
 		reflect.ValueOf(200),
 	}); err == nil {
 		t.Fatal(err)
@@ -241,7 +295,7 @@ func Test__ROUTER_CHECKCALL2(t *testing.T) {
 	}
 
 	// 関数情報を取得する
-	if _, err := caller.Valid(a, "int", "int"); err == nil {
+	if _, err := caller.Valid(c, a, "int", "int"); err == nil {
 		t.Fatal(err)
 	} else {
 		v := err.(*NotEnoughRets)
@@ -251,7 +305,7 @@ func Test__ROUTER_CHECKCALL2(t *testing.T) {
 	}
 
 	// 関数情報を取得する
-	if _, err := caller.Valid(a, "int"); err == nil {
+	if _, err := caller.Valid(c, a, "int"); err == nil {
 		t.Fatal(err)
 	} else {
 		v := err.(*IllegalRets)
@@ -260,7 +314,7 @@ func Test__ROUTER_CHECKCALL2(t *testing.T) {
 		fmt.Println(v.Want)
 	}
 	// 関数情報を取得する
-	if _, err := caller.Valid(a, "router.TestString"); err != nil {
+	if _, err := caller.Valid(c, a, "router.TestString"); err != nil {
 		t.Fatal(err)
 	}
 }

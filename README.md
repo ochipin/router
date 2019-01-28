@@ -75,12 +75,20 @@ func main() {
 
 	// Call で呼び出す前に、事前チェックをする
 	// 第2引数以降は、復帰値の型を文字列で指定可能
-	fn, err := res.Valid(args, "string")
+	elem, _ := res.Get()
+	fn, err := res.Valid(elem, args, "string")
 	if err != nil {
 		panic(err)
 	}
 	out = fn.Call(args)
 	// Hello World! が表示される
+	fmt.Println(out[0].String())
+
+	// 直接名前を指定して、アクションを実行する
+	out, err = res.Callname(elem, "Hello", []reflect.ValueOf{
+		reflect.ValueOf("Hello"),
+	}, "string")
+	// Hello Hello が出力される
 	fmt.Println(out[0].String())
 }
 ```

@@ -313,7 +313,11 @@ func (r Router) Caller(method, path string) (Result, []reflect.Value, error) {
 	// 指定されたメソッド名に該当するルーティング構造体を取得する
 	routing, ok := r[method]
 	if !ok {
-		return nil, nil, fmt.Errorf("'%s' - method not found", method)
+		return nil, nil, &NotRoutes{
+			Message: fmt.Sprintf("'[%s]: %s' - not found", method, path),
+			Method:  method,
+			Path:    path,
+		}
 	}
 
 	// 指定されたパスを固定パスとしてアクションを取得する
@@ -340,7 +344,11 @@ func (r Router) Caller(method, path string) (Result, []reflect.Value, error) {
 
 	// アクションの取得失敗の場合、nil を返却する
 	if i == nil {
-		return nil, nil, fmt.Errorf("'%s' - path not found", path)
+		return nil, nil, &NotRoutes{
+			Message: fmt.Sprintf("'[%s]: %s' - not found", method, path),
+			Method:  method,
+			Path:    path,
+		}
 	}
 
 	// interface{} を Action 構造体へ変換する
@@ -611,6 +619,11 @@ func SetStruct(action reflect.Value, i interface{}) error {
 	// i のメンバ名(ミックスイン名)を取得 (ex: Structname)
 	membername := v.Type().Name()
 
+	if action.Type().String() == basicname {
+		action.Set(reflect.ValueOf(i))
+		return nil
+	}
+
 	// 引数で指定した構造体がミックスインされているか確認する
 	for {
 		action = action.FieldByName(membername)
@@ -650,6 +663,17 @@ func SetStruct(action reflect.Value, i interface{}) error {
 
 	action.Set(reflect.ValueOf(i))
 	return nil
+}
+
+// NotRoutes : 指定したパス、またはメソッドが存在しない場合のエラー型
+type NotRoutes struct {
+	Message string
+	Path    string
+	Method  string
+}
+
+func (err *NotRoutes) Error() string {
+	return err.Message
 }
 
 // NotEnoughArgs : コールするメソッドの引数の数が一致しない場合のエラー型

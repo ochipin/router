@@ -154,6 +154,14 @@ func Test__ROUTER_SET(t *testing.T) {
 	if err := SetStruct(action, s); err == nil {
 		t.Fatal(err)
 	}
+
+	var val = new(int)
+	*val = 300
+	if err := SetStruct(action, Sample{Basename: val}); err != nil {
+		t.Fatal(err)
+	} else {
+		fmt.Println(*(action.Elem().Interface().(Sample)).Basename)
+	}
 }
 func Test__ROUTER_CHECKCALL1(t *testing.T) {
 	// ルーティングテーブル作成用オブジェクトを生成

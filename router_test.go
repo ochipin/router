@@ -162,6 +162,22 @@ func Test__ROUTER_SET(t *testing.T) {
 	} else {
 		fmt.Println(*(action.Elem().Interface().(Sample)).Basename)
 	}
+
+	if HasName(action, "Sample", "Test") == true {
+		t.Fatal("HasName")
+	}
+	if HasName(reflect.ValueOf(nil), "Sample", "Test") == true {
+		t.Fatal("HasName")
+	}
+	if HasName(action, "*router.Sample", "Test") == true {
+		t.Fatal("HasName")
+	}
+	if HasName(reflect.ValueOf(val), "*router.Sample", "Test") == true {
+		t.Fatal("HasName")
+	}
+	if HasName(action, "*router.Sample", "Hello") != true {
+		t.Fatal("HasName")
+	}
 }
 func Test__ROUTER_CHECKCALL1(t *testing.T) {
 	// ルーティングテーブル作成用オブジェクトを生成

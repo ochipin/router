@@ -665,6 +665,21 @@ func SetStruct(action reflect.Value, i interface{}) error {
 	return nil
 }
 
+// HasName : 指定された名前の構造体、メソッドを所持しているか確認する
+func HasName(elem reflect.Value, ctlname, actname string) bool {
+	if elem.IsValid() == false {
+		return false
+	}
+	var e = elem
+	for elem.Kind() == reflect.Ptr {
+		elem = elem.Elem()
+	}
+	if elem.Kind() != reflect.Struct {
+		return false
+	}
+	return e.Type().String() == ctlname && e.MethodByName(actname).IsValid()
+}
+
 // NotRoutes : 指定したパス、またはメソッドが存在しない場合のエラー型
 type NotRoutes struct {
 	Message string

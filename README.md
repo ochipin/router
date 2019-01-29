@@ -90,6 +90,11 @@ func main() {
 	}, "string")
 	// Hello Hello が出力される
 	fmt.Println(out[0].String())
+
+	// HasName 関数を利用して、構造体、メソッドを所持しているか確認
+	if router.HasName(elem, "Hello", "World") == true {
+		// Hello.World を所持している
+	}
 }
 ```
 
